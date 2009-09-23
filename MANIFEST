@@ -1,0 +1,9 @@
+Changes
+Makefile.PL
+MANIFEST
+MANIFEST.SKIP
+README
+Log-Syslog-DangaSocket.spec
+lib/Log/Syslog/DangaSocket.pm
+t/Log-Syslog-DangaSocket.t
+META.yml                                 Module meta-data (added by MakeMaker)
