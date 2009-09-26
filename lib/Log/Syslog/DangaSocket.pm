@@ -13,7 +13,7 @@ Log::Syslog::DangaSocket - Danga::Socket wrapper around a syslog sending socket
         $sender_name,   # sender application name (informational only)
         $facility,      # syslog facility number
         $severity,      # syslog severity number
-        $err_handler    # error callback
+        $reconnect      # whether to reconnect on error
     );
 
     Danga::Socket->AddTimer(5, sub { $logger->send("5 seconds elapsed") });
@@ -35,6 +35,14 @@ instead of silently dropping the message. But you should really be using TCP if
 you care about reliability.
 
 Trailing newlines are added automatically to log messages.
+
+=head2 ERROR HANDLING
+
+If a fatal occur occurs during sending (e.g. the connection is remotely
+closed), Log::Syslog::DangaSocket will attempt to automatically reconnect if
+$reconnect is true. Any pending writes from the closed connection will be
+retried in the new one. If $reconnect is a code reference, it will be passed
+the new Log::Syslog::DangaSocket object after reconnecting.
 
 =head1 SEE ALSO
 
@@ -58,43 +66,55 @@ at your option, any later version of Perl 5 you may have available.
 
 package Log::Syslog::DangaSocket;
 
-our $VERSION = '1.00';
+use strict;
+use warnings;
 
+our $VERSION = '1.02';
+
+our $CONNECT_TIMEOUT = 1;
+
+use Log::Syslog::DangaSocket::Socket;
 use POSIX 'strftime';
 
-use base 'Danga::Socket';
+use base 'fields';
 
 use fields (
+    # ->new params
     'send_host',    # where log message originated
     'name',         # application-defined logger name
     'facility',     # syslog facility constant
     'severity',     # syslog severity constant
-    'err_handler',  # subref to call on error
+
+    # state vars
+    'sock',         # Log::Syslog::DangaSocket::Socket object
     'last_time',    # last epoch time when a prefix was generated
     'prefix',       # stringified time changes only once per second, so cache it and rest of prefix
 );
 
 sub new {
-    my $class = shift;
+    my $ref   = shift;
+    my $class = ref $ref || $ref;
+
     my $proto = shift;
     my $host  = shift;
     my $port  = shift;
 
-    my $sock = IO::Socket::INET->new(
-        Proto    => $proto,
-        PeerAddr => $host,
-        PeerPort => $port,
-        Blocking => 0,
-    );
-
     my Log::Syslog::DangaSocket $self = fields::new($class);
-    $self->SUPER::new($sock);
 
     ( $self->{send_host},
       $self->{name},
       $self->{facility},
-      $self->{severity},
-      $self->{err_handler} ) = @_;
+      $self->{severity} ) = @_;
+
+    my $connecter;
+    $connecter = sub {
+        my $unsent = shift;
+        $self->{sock} = Log::Syslog::DangaSocket::Socket->new($proto, $host, $port, $connecter);
+        if ($unsent && @$unsent) {
+            $self->{sock}->write_buffered($_) for @$unsent;
+        }
+    };
+    $connecter->();
 
     for (qw/ send_host name facility severity /) {
         die "missing parameter $_" unless $self->{$_};
@@ -106,7 +126,7 @@ sub new {
 }
 
 sub _update_prefix {
-    my $self = shift;
+    my Log::Syslog::DangaSocket $self = shift;
 
     # based on http://www.faqs.org/rfcs/rfc3164.html
     my $time_str = strftime('%b %d %H:%M:%S', localtime($self->{last_time} = shift));
@@ -123,18 +143,7 @@ sub send {
     my $time = time;
     $self->_update_prefix($time) if $time != $self->{last_time};
 
-    $self->write(\join '', $self->{prefix}, $_[0], "\n");
+    $self->{sock}->write_buffered(\join '', $self->{prefix}, $_[0], "\n");
 }
-
-# syslogd shouldn't be talking back
-sub event_read { }
-
-sub on_error {
-    my $self = shift;
-    $self->close;
-    $self->{err_handler}->($self) if $self->{err_handler};
-}
-*event_err = \&on_error;
-*event_hup = \&on_error;
 
 1;
