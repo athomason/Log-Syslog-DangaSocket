@@ -5,7 +5,7 @@
 
 name:      perl-Log-Syslog-DangaSocket
 summary:   Log-Syslog-DangaSocket - Danga::Socket wrapper around a syslog sending socket
-version:   1.00
+version:   1.02
 release:   1
 vendor:    Adam Thomason <athomason@cpan.org>
 packager:  Six Apart Ltd <cpan@sixapart.com>
@@ -15,7 +15,7 @@ url:       http://www.cpan.org
 buildroot: %{_tmppath}/%{name}-%{version}-%(id -u -n)
 buildarch: noarch
 prefix:    %(echo %{_prefix})
-source:    Log-Syslog-DangaSocket-1.00.tar.gz
+source:    Log-Syslog-DangaSocket-1.02.tar.gz
 
 requires:  perl(Danga::Socket)
 
