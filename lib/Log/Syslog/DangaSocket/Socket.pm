@@ -12,8 +12,7 @@ use base 'Danga::Socket';
 use fields (
     'err_handler',  # subref to call on error
     'connecting',   # connect timer object before connected, undef afterwards
-    'unsent_buf',   # messages which haven't been pushed to Danga::Socket
-    'sent_buf',     # messages which have been pushed to Danga::Socket but not put on the wire
+    'queue',        # messages which haven't been fully sent
 );
 
 our $CONNECT_TIMEOUT = 1;
@@ -47,6 +46,8 @@ sub new {
     # for prompt error notifications
     $self->watch_read(1);
 
+    $self->{queue} = [];
+
     $DEBUG && warn "$self created\n";
 
     $self->{connecting} = Danga::Socket->AddTimer(
@@ -56,41 +57,44 @@ sub new {
     return $self;
 }
 
-# normally syslogs doesn't send anything back. if an error occurs (like remote
-# side closing the connection), we'll be notified of eof this way
-sub event_read {
-    my Log::Syslog::DangaSocket::Socket $self = shift;
-    my $read = sysread $self->{sock}, my $buf, 1;
-    $self->close if defined $read && $read == 0; # eof
-}
-
 sub write_buffered {
     my Log::Syslog::DangaSocket::Socket $self = shift;
 
     my $message_ref = shift;
-    if ($self->{connecting}) {
-    $DEBUG && warn "buffered $$message_ref\n";
-        push @{ $self->{unsent_buf} }, $message_ref;
+    push @{ $self->{queue} }, $message_ref;
+
+    if ($DEBUG) {
+        my $m;
+        chomp($m = $$message_ref) if $DEBUG;
+        $DEBUG && warn "queued $m\n";
     }
-    else {
-        $self->write_through($message_ref);
-    }
+
+    # flush will happen upon connection
+    $self->flush_queue unless $self->{connecting};
 }
 
-sub write_through {
+sub flush_queue {
     my Log::Syslog::DangaSocket::Socket $self = shift;
-    my $message_ref = shift;
-    push @{ $self->{sent_buf} }, $message_ref;
-    my $m;
-    chomp($m = $$message_ref) if $DEBUG;
-    $DEBUG && warn "pushed $m\n";
-    $self->write($message_ref);
-    $self->write(sub {
-        shift @{ $self->{sent_buf} };
-        $DEBUG && warn "write finished of '$m'\n";
-    });
+    my $queue = $self->{queue};
+
+    for my $message_ref (@$queue) {
+        # give the message to Danga::Socket...
+        $self->write($message_ref);
+
+        # but only forget it in the local queue once notified that the write completed
+        $self->write(sub {
+            shift @$queue;
+            $DEBUG && warn "write finished of '$$message_ref'\n";
+            if ($DEBUG) {
+                my $m;
+                chomp($m = $$message_ref) if $DEBUG;
+                $DEBUG && warn "completed '$m'\n";
+            }
+        });
+    }
 }
 
+# 
 sub event_write {
     my Log::Syslog::DangaSocket::Socket $self = shift;
     $DEBUG && warn "entering event_write\n";
@@ -99,17 +103,12 @@ sub event_write {
         local $! = unpack('I', $packed_error);
 
         if ($! == 0) {
-            if (my $queued = $self->{unsent_buf}) {
-                while (my $message_ref = shift @$queued) {
-                    $self->write_through($message_ref);
-                }
-                @$queued = ();
-            }
-
+            # connected
             $DEBUG && warn "connected\n";
             $self->{connecting}->cancel;
             $self->{connecting} = undef;
             $self->watch_write(0);
+            $self->flush_queue;
         }
         else {
             $DEBUG && warn "connect error: $!\n";
@@ -119,9 +118,12 @@ sub event_write {
     $self->SUPER::event_write(@_);
 }
 
-sub unsent {
+# normally syslogd doesn't send anything back. if an error occurs (like remote
+# side closing the connection), we'll be notified of eof this way
+sub event_read {
     my Log::Syslog::DangaSocket::Socket $self = shift;
-    return $self->{connecting} ? $self->{unsent_buf} : $self->{sent_buf};
+    my $read = sysread $self->{sock}, my $buf, 1;
+    $self->close if defined $read && $read == 0; # eof
 }
 
 sub close {
@@ -133,12 +135,12 @@ sub close {
         $DEBUG && warn "error while connecting\n";
         Danga::Socket->AddTimer($CONNECT_TIMEOUT, sub {
             $DEBUG && warn "retrying connect\n";
-            $self->{err_handler}->($self->unsent());
+            $self->{err_handler}->($self->{queue});
         });
     }
     else {
         # otherwise try to reconnect immediately
-        $self->{err_handler}->($self->unsent);
+        $self->{err_handler}->($self->{queue});
     }
     $self->SUPER::close(@_);
 }
