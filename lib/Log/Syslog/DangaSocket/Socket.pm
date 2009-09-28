@@ -20,6 +20,7 @@ our $CONNECT_TIMEOUT = 1;
 our $DEBUG = 0;
 
 # $class->new($proto, $host, $port, $err_handler)
+# $err_handler callback will be called with an arrayref of any unsent data
 sub new {
     my $ref   = shift;
     my $class = ref $ref || $ref;
@@ -48,17 +49,19 @@ sub new {
 
     $DEBUG && warn "$self created\n";
 
-    $self->{connecting} = Danga::Socket->AddTimer($CONNECT_TIMEOUT, sub {
-        $self->on_error;
-    });
+    $self->{connecting} = Danga::Socket->AddTimer(
+        $CONNECT_TIMEOUT, sub { $self->close }
+    );
 
     return $self;
 }
 
+# normally syslogs doesn't send anything back. if an error occurs (like remote
+# side closing the connection), we'll be notified of eof this way
 sub event_read {
     my Log::Syslog::DangaSocket::Socket $self = shift;
     my $read = sysread $self->{sock}, my $buf, 1;
-    $self->on_error if defined $read && $read == 0;
+    $self->close if defined $read && $read == 0; # eof
 }
 
 sub write_buffered {
@@ -110,7 +113,7 @@ sub event_write {
         }
         else {
             $DEBUG && warn "connect error: $!\n";
-            $self->on_error();
+            $self->close;
         }
     }
     $self->SUPER::event_write(@_);
@@ -121,10 +124,10 @@ sub unsent {
     return $self->{connecting} ? $self->{unsent_buf} : $self->{sent_buf};
 }
 
-sub on_error {
+sub close {
     my Log::Syslog::DangaSocket::Socket $self = shift;
     return if $self->{closed};
-    $DEBUG && warn "on_error\n";
+    $DEBUG && warn "closing\n";
     if ($self->{connecting}) {
         # if we got an error while still trying to connect, back off before trying again
         $DEBUG && warn "error while connecting\n";
@@ -137,10 +140,10 @@ sub on_error {
         # otherwise try to reconnect immediately
         $self->{err_handler}->($self->unsent);
     }
-    $self->close;
+    $self->SUPER::close(@_);
 }
 
-*event_err = \&on_error;
-*event_hup = \&on_error;
+*event_err = \&close;
+*event_hup = \&close;
 
 1;
