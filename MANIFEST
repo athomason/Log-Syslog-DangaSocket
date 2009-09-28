@@ -5,5 +5,6 @@ MANIFEST.SKIP
 README
 Log-Syslog-DangaSocket.spec
 lib/Log/Syslog/DangaSocket.pm
-t/Log-Syslog-DangaSocket.t
+t/01-simple.t
+t/02-reconnect.t
 META.yml                                 Module meta-data (added by MakeMaker)
