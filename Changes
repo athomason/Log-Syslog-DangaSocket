@@ -1,4 +1,6 @@
 Revision history for Perl extension Log::Syslog::DangaSocket.
 
+1.03  Mon Sep 28 15:17:28 PDT 2009
+	- Better error handling
 1.00  Wed Sep 23 00:55:48 PDT 2009
 	- original version

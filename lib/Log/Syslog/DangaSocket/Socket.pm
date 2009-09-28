@@ -16,10 +16,11 @@ use fields (
 );
 
 our $CONNECT_TIMEOUT = 1;
-our $DEBUG = 0;
+use constant DEBUG => 0;
 
-# $class->new($proto, $host, $port, $err_handler)
+# $class->new($proto, $host, $port, $err_handler, $messages)
 # $err_handler callback will be called with an arrayref of any unsent data
+# optional $messages should be arrayref of stringrefs
 sub new {
     my $ref   = shift;
     my $class = ref $ref || $ref;
@@ -46,9 +47,8 @@ sub new {
     # for prompt error notifications
     $self->watch_read(1);
 
-    $self->{queue} = [];
-
-    $DEBUG && warn "$self created\n";
+    # start with initial message queue (probably from reconnect) if present
+    $self->{queue} = $_[4] || [];
 
     $self->{connecting} = Danga::Socket->AddTimer(
         $CONNECT_TIMEOUT, sub { $self->close }
@@ -63,11 +63,7 @@ sub write_buffered {
     my $message_ref = shift;
     push @{ $self->{queue} }, $message_ref;
 
-    if ($DEBUG) {
-        my $m;
-        chomp($m = $$message_ref) if $DEBUG;
-        $DEBUG && warn "queued $m\n";
-    }
+    DEBUG && warn "queued $$message_ref\n";
 
     # flush will happen upon connection
     $self->flush_queue unless $self->{connecting};
@@ -77,41 +73,37 @@ sub flush_queue {
     my Log::Syslog::DangaSocket::Socket $self = shift;
     my $queue = $self->{queue};
 
-    for my $message_ref (@$queue) {
+    my @to_send = @$queue; # copy so shift() below doesn't modify iterated list
+    for my $message_ref (@to_send) {
         # give the message to Danga::Socket...
         $self->write($message_ref);
+        DEBUG && warn "wrote '$$message_ref'\n";
 
         # but only forget it in the local queue once notified that the write completed
         $self->write(sub {
             shift @$queue;
-            $DEBUG && warn "write finished of '$$message_ref'\n";
-            if ($DEBUG) {
-                my $m;
-                chomp($m = $$message_ref) if $DEBUG;
-                $DEBUG && warn "completed '$m'\n";
-            }
+            DEBUG && warn "completed '$$message_ref'\n";
         });
     }
 }
 
-# 
 sub event_write {
     my Log::Syslog::DangaSocket::Socket $self = shift;
-    $DEBUG && warn "entering event_write\n";
+    DEBUG && warn "entering event_write\n";
     if ($self->{connecting}) {
         my $packed_error = getsockopt($self->sock, SOL_SOCKET, SO_ERROR);
         local $! = unpack('I', $packed_error);
 
         if ($! == 0) {
             # connected
-            $DEBUG && warn "connected\n";
+            DEBUG && warn "connected\n";
             $self->{connecting}->cancel;
             $self->{connecting} = undef;
             $self->watch_write(0);
             $self->flush_queue;
         }
         else {
-            $DEBUG && warn "connect error: $!\n";
+            DEBUG && warn "connect error: $!\n";
             $self->close;
         }
     }
@@ -129,12 +121,12 @@ sub event_read {
 sub close {
     my Log::Syslog::DangaSocket::Socket $self = shift;
     return if $self->{closed};
-    $DEBUG && warn "closing\n";
+    DEBUG && warn "closing\n";
     if ($self->{connecting}) {
         # if we got an error while still trying to connect, back off before trying again
-        $DEBUG && warn "error while connecting\n";
+        DEBUG && warn "error while connecting\n";
         Danga::Socket->AddTimer($CONNECT_TIMEOUT, sub {
-            $DEBUG && warn "retrying connect\n";
+            DEBUG && warn "retrying connect\n";
             $self->{err_handler}->($self->{queue});
         });
     }
@@ -145,6 +137,7 @@ sub close {
     $self->SUPER::close(@_);
 }
 
+# close on any error
 *event_err = \&close;
 *event_hup = \&close;
 

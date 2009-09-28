@@ -38,11 +38,10 @@ Trailing newlines are added automatically to log messages.
 
 =head2 ERROR HANDLING
 
-If a fatal occur occurs during sending (e.g. the connection is remotely
-closed), Log::Syslog::DangaSocket will attempt to automatically reconnect if
+If a fatal occur occurs during sending (e.g. the connection is remotely closed
+or reset), Log::Syslog::DangaSocket will attempt to automatically reconnect if
 $reconnect is true. Any pending writes from the closed connection will be
-retried in the new one. If $reconnect is a code reference, it will be passed
-the new Log::Syslog::DangaSocket object after reconnecting.
+retried in the new one.
 
 =head1 SEE ALSO
 
@@ -69,7 +68,7 @@ package Log::Syslog::DangaSocket;
 use strict;
 use warnings;
 
-our $VERSION = '1.02';
+our $VERSION = '1.03';
 
 our $CONNECT_TIMEOUT = 1;
 
@@ -84,6 +83,7 @@ use fields (
     'name',         # application-defined logger name
     'facility',     # syslog facility constant
     'severity',     # syslog severity constant
+    'reconnect',    # whether to attempt reconnect on error
 
     # state vars
     'sock',         # Log::Syslog::DangaSocket::Socket object
@@ -104,15 +104,16 @@ sub new {
     ( $self->{send_host},
       $self->{name},
       $self->{facility},
-      $self->{severity} ) = @_;
+      $self->{severity},
+      $self->{reconnect} ) = @_;
 
     my $connecter;
     $connecter = sub {
         my $unsent = shift;
-        $self->{sock} = Log::Syslog::DangaSocket::Socket->new($proto, $host, $port, $connecter);
-        if ($unsent && @$unsent) {
-            $self->{sock}->write_buffered($_) for @$unsent;
-        }
+        $self->{sock} = Log::Syslog::DangaSocket::Socket->new(
+            $proto, $host, $port, $connecter, $unsent,
+            ($self->{reconnect} ? $connecter : ()),
+        );
     };
     $connecter->();
 

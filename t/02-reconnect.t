@@ -9,16 +9,16 @@ use IO::Socket::INET;
 use Log::Syslog::DangaSocket;
 use Time::HiRes 'time', 'sleep';
 
-our $DEBUG = 0;
-$Log::Syslog::DangaSocket::Socket::DEBUG = $DEBUG;
-if ($DEBUG) {
+use constant DEBUG => 0;
+if (DEBUG) {
     my $start = time;
     my $parent = $$;
     $SIG{__WARN__} = sub {
-        printf STDERR "%f %s: %s",
+        (my $m = shift) =~ tr/\r\n//d;
+        printf STDERR "%f %s: %s\n",
             time - $start,
             ($$ == $parent ? 'server' : 'client'),
-            shift;
+            $m;
     };
 }
 
@@ -34,11 +34,11 @@ my $pid = fork;
 die "fork failed" unless defined $pid;
 
 if (!$pid) {
-    $DEBUG && warn "kid is $$\n";
+    DEBUG && warn "kid is $$\n";
     # child acts as syslog client
     sleep 1; # give parent a chance to start listener
 
-    $DEBUG && warn "creating logger\n";
+    DEBUG && warn "creating logger\n";
     my $logger = Log::Syslog::DangaSocket->new(
         'tcp',
         'localhost',
@@ -49,10 +49,14 @@ if (!$pid) {
         5,
     );
 
+    # send some messages before event loop
+    $logger->send($_) for 0..4;
+
+    # send rest after
     my $sender;
     $sender = sub {
         my $n = shift;
-        $DEBUG && warn "syslogging '$n'\n";
+        DEBUG && warn "syslogging '$n'\n";
         $logger->send($n);
         Danga::Socket->AddTimer($delay, sub {
             if ($n < $num_messages) {
@@ -60,17 +64,17 @@ if (!$pid) {
             }
         } );
     };
-    $DEBUG && warn "starting to send\n";
-    $sender->(0);
+    DEBUG && warn "starting to send\n";
+    $sender->(5);
 
     Danga::Socket->AddTimer(10, sub {
-        $DEBUG && warn "exiting\n";
+        DEBUG && warn "exiting\n";
         exit 0;
     });
     Danga::Socket->EventLoop;
     die "shouldn't be here";
 }
-$DEBUG && warn "forked kid $pid\n";
+DEBUG && warn "forked kid $pid\n";
 
 my $listener;
 sub start_listener {
@@ -87,15 +91,15 @@ sub syslogd {
     $SIG{ALRM} = sub { die "No connection received" };
     alarm 3;
 
-    $DEBUG && warn "calling accept\n";
+    DEBUG && warn "calling accept\n";
     my $syslogd = $listener->accept;
-    $DEBUG && warn "accept returned\n";
+    DEBUG && warn "accept returned\n";
 
     alarm 0;
 
     pass('got connection');
 
-    $DEBUG && warn "selecting\n";
+    DEBUG && warn "selecting\n";
     vec(my $rin = '', fileno($syslogd), 1) = 1;
     my $found = select(my $rout = $rin, undef, undef, 5);
 
@@ -110,30 +114,31 @@ alarm 2*$num_messages*$delay;
 start_listener();
 
 my $syslogd = syslogd();
-$DEBUG && warn "reading from $syslogd\n";
+DEBUG && warn "reading from $syslogd\n";
 for my $lineno (0 .. $num_messages/2-1) {
     chomp(my $line = <$syslogd>);
     ok($line, "got line $lineno");
     like($line, qr/: $lineno$/, "right line $lineno");
 }
-$DEBUG && warn "listener closing\n";
+
+# close listener first so immedate reconnect fails
+DEBUG && warn "listener closing\n";
 undef $listener;
 
-#sleep $delay;
-$DEBUG && warn "server closing\n";
+DEBUG && warn "server closing\n";
 $syslogd->close();
 
 sleep 8*$delay;
-$DEBUG && warn "server restarted\n";
+DEBUG && warn "server restarted\n";
 
 start_listener;
 $syslogd = syslogd();
-$DEBUG && warn "reading from $syslogd\n";
+DEBUG && warn "reading from $syslogd\n";
 for my $lineno ($num_messages/2 .. $num_messages) {
     chomp(my $line = <$syslogd>);
     ok($line, "got line $lineno");
     like($line, qr/: $lineno$/, "right line $lineno");
 }
-$DEBUG && warn "done\n";
+DEBUG && warn "done\n";
 
 kill 9, $pid;
