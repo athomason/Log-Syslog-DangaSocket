@@ -2,10 +2,11 @@
 %define filelist %{pkgname}-%{version}-filelist
 %define NVR %{pkgname}-%{version}-%{release}
 %define maketest 1
+%define VERSION %(grep 'VERSION =' lib/Log/Syslog/DangaSocket.pm | perl -nle '/([0-9.]+)/ && print $1')
 
 name:      perl-Log-Syslog-DangaSocket
 summary:   Log-Syslog-DangaSocket - Danga::Socket wrapper around a syslog sending socket
-version:   1.03
+version:   %{VERSION}
 release:   1
 vendor:    Adam Thomason <athomason@cpan.org>
 packager:  Six Apart Ltd <cpan@sixapart.com>
@@ -15,7 +16,7 @@ url:       http://www.cpan.org
 buildroot: %{_tmppath}/%{name}-%{version}-%(id -u -n)
 buildarch: noarch
 prefix:    %(echo %{_prefix})
-source:    Log-Syslog-DangaSocket-1.03.tar.gz
+source:    Log-Syslog-DangaSocket-%{version}.tar.gz
 
 requires:  perl(Danga::Socket)
 
