@@ -68,7 +68,7 @@ package Log::Syslog::DangaSocket;
 use strict;
 use warnings;
 
-our $VERSION = '1.03';
+our $VERSION = '1.04';
 
 our $CONNECT_TIMEOUT = 1;
 
@@ -124,6 +124,24 @@ sub new {
     $self->_update_prefix(time);
 
     return $self;
+}
+
+sub facility {
+    my $self = shift;
+    if (@_) {
+        $self->{facility} = shift;
+        $self->_update_prefix(time);
+    }
+    return $self->{facility};
+}
+
+sub severity {
+    my $self = shift;
+    if (@_) {
+        $self->{severity} = shift;
+        $self->_update_prefix(time);
+    }
+    return $self->{severity};
 }
 
 sub _update_prefix {
