@@ -1,14 +1,14 @@
 =head1 NAME
 
 Log::Syslog::DangaSocket - Danga::Socket wrapper around a syslog sending socket
-(TCP or UDP).
+(TCP, UDP, or UNIX).
 
 =head1 SYNOPSIS
 
     my $logger = Log::Syslog::DangaSocket->new(
-        $proto,         # 'udp' or 'tcp'
-        $dest_host,     # destination hostname
-        $dest_port,     # destination port
+        $proto,         # 'udp', 'tcp', or 'unix'
+        $dest_host,     # destination hostname or filename
+        $dest_port,     # destination port (ignored for unix socket)
         $sender_host,   # sender hostname (informational only)
         $sender_name,   # sender application name (informational only)
         $facility,      # syslog facility number
@@ -23,16 +23,16 @@ Log::Syslog::DangaSocket - Danga::Socket wrapper around a syslog sending socket
 =head1 DESCRIPTION
 
 This module constructs and asynchronously sends syslog packets to a syslogd
-listening on a TCP or UDP port. Calls to C<$logger-E<gt>send()> are guaranteed to
-never block; though naturally, this only works in the context of a running
-Danga::Socket event loop.
+listening on a TCP or UDP port, or a UNIX socket. Calls to
+C<$logger-E<gt>send()> are guaranteed to never block; though naturally, this
+only works in the context of a running Danga::Socket event loop.
 
 UDP support is present primarily for completeness; an implementation like
 L<Log::Syslog::Fast> will provide non-blocking behavior with less overhead.
 Only in the unlikely case of the local socket buffer being full will this
 module benefit you by buffering the failed write and retrying it when possible,
-instead of silently dropping the message. But you should really be using TCP if
-you care about reliability.
+instead of silently dropping the message. But you should really be using TCP
+or a domain socket if you care about reliability.
 
 Trailing newlines are added automatically to log messages.
 
@@ -68,7 +68,7 @@ package Log::Syslog::DangaSocket;
 use strict;
 use warnings;
 
-our $VERSION = '1.04';
+our $VERSION = '1.05';
 
 our $CONNECT_TIMEOUT = 1;
 

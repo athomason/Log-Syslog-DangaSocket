@@ -4,6 +4,8 @@ use strict;
 use warnings;
 
 use Carp;
+use IO::Socket::INET;
+use IO::Socket::UNIX;
 use POSIX 'strftime';
 use Socket qw(SOL_SOCKET SO_ERROR);
 
@@ -28,12 +30,21 @@ sub new {
     my Log::Syslog::DangaSocket::Socket $self = fields::new($class);
 
     # kick off non-blocking connect
-    my $sock = IO::Socket::INET->new(
-        Proto    => $_[0],
-        PeerAddr => $_[1],
-        PeerPort => $_[2],
-        Blocking => 0,
-    );
+    my $sock;
+    if ($_[0] eq 'unix') {
+        $sock = IO::Socket::UNIX->new(
+            Peer     => $_[1],
+            Blocking => 0,
+        );
+    }
+    else {
+        $sock = IO::Socket::INET->new(
+            Proto    => $_[0],
+            PeerAddr => $_[1],
+            PeerPort => $_[2],
+            Blocking => 0,
+        );
+    }
 
     croak "couldn't create sock: $!" unless $sock;
 
