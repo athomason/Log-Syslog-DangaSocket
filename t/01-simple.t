@@ -1,17 +1,20 @@
 use strict;
 use warnings;
 
-use Test::More tests => 1 + 2 * 4;
+use Test::More tests => 1 + 3 * 4;
 BEGIN { use_ok('Log::Syslog::DangaSocket') };
 
 use IO::Socket::INET;
+use IO::Socket::UNIX;
 
 my $test_port = 10514;
 
 $SIG{CHLD} = 'IGNORE';
 
 my $proto;
-for $proto (qw/ tcp udp /) {
+for $proto (qw/ tcp udp unix /) {
+
+    my $test_host = $proto eq 'unix' ? '/tmp/testdevlog' : 'localhost';
 
     my $pid = fork;
     die "fork failed" unless defined $pid;
@@ -20,7 +23,7 @@ for $proto (qw/ tcp udp /) {
         sleep 1;
         my $logger = Log::Syslog::DangaSocket->new(
             $proto,
-            'localhost',
+            $test_host,
             $test_port,
             'testhost',
             'LogSyslogDangaSocketTest',
@@ -35,17 +38,26 @@ for $proto (qw/ tcp udp /) {
         die "shouldn't be here";
     }
 
-    my $listener = IO::Socket::INET->new(
-        Proto       => $proto,
-        LocalHost   => 'localhost',
-        LocalPort   => $test_port,
-        ($proto eq 'tcp' ? (Listen => 5) : ()),
-        Reuse       => 1,
-    );
+    my $listener;
+    if ($proto eq 'unix') {
+        $listener = IO::Socket::UNIX->new(
+            Local  => $test_host,
+            Listen => 1,
+        );
+    }
+    else {
+        $listener = IO::Socket::INET->new(
+            Proto       => $proto,
+            LocalHost   => 'localhost',
+            LocalPort   => $test_port,
+            ($proto eq 'tcp' ? (Listen => 5) : ()),
+            Reuse       => 1,
+        );
+    }
     ok($listener, "$proto: listen on port $test_port");
 
     my $receiver = $listener;
-    if ($proto eq 'tcp') {
+    if ($proto eq 'tcp' || $proto eq 'unix') {
         $receiver = $listener->accept;
         $receiver->blocking(0);
     }
@@ -62,4 +74,5 @@ for $proto (qw/ tcp udp /) {
     }
 
     kill 9, $pid;
+    unlink $test_host if $proto eq 'unix';
 }
