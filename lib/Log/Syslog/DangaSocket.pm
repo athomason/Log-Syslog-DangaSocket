@@ -47,6 +47,8 @@ retried in the new one.
 
 L<Danga::Socket>
 
+L<Log::Syslog::Constants>
+
 L<Log::Syslog::Fast>
 
 =head1 AUTHOR
