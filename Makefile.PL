@@ -5,7 +5,9 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME              => 'Log::Syslog::DangaSocket',
     VERSION_FROM      => 'lib/Log/Syslog/DangaSocket.pm', # finds $VERSION
-    PREREQ_PM         => {}, # e.g., Module::Name => 1.1
+    PREREQ_PM         => {
+        'Danga::Socket' => 1.59,
+    },
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/Log/Syslog/DangaSocket.pm', # retrieve abstract from module
        AUTHOR         => 'Adam Thomason <athomason@cpan.org>') : ()),

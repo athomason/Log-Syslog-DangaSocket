@@ -7,14 +7,32 @@ BEGIN { use_ok('Log::Syslog::DangaSocket') };
 use IO::Socket::INET;
 use IO::Socket::UNIX;
 
-my $test_port = 10514;
-
 $SIG{CHLD} = 'IGNORE';
 
 my $proto;
 for $proto (qw/ tcp udp unix /) {
 
     my $test_host = $proto eq 'unix' ? '/tmp/testdevlog' : 'localhost';
+
+    my $listener;
+    my $test_port = 0;
+    if ($proto eq 'unix') {
+        $listener = IO::Socket::UNIX->new(
+            Local  => $test_host,
+            Listen => 1,
+        );
+    }
+    else {
+        $listener = IO::Socket::INET->new(
+            Proto       => $proto,
+            LocalHost   => 'localhost',
+            LocalPort   => 0,
+            ($proto eq 'tcp' ? (Listen => 5) : ()),
+            Reuse       => 1,
+        );
+        $test_port = $listener->sockport;
+    }
+    ok($listener, "$proto: listen on port $test_port");
 
     my $pid = fork;
     die "fork failed" unless defined $pid;
@@ -37,24 +55,6 @@ for $proto (qw/ tcp udp unix /) {
         Danga::Socket->EventLoop;
         die "shouldn't be here";
     }
-
-    my $listener;
-    if ($proto eq 'unix') {
-        $listener = IO::Socket::UNIX->new(
-            Local  => $test_host,
-            Listen => 1,
-        );
-    }
-    else {
-        $listener = IO::Socket::INET->new(
-            Proto       => $proto,
-            LocalHost   => 'localhost',
-            LocalPort   => $test_port,
-            ($proto eq 'tcp' ? (Listen => 5) : ()),
-            Reuse       => 1,
-        );
-    }
-    ok($listener, "$proto: listen on port $test_port");
 
     my $receiver = $listener;
     if ($proto eq 'tcp' || $proto eq 'unix') {

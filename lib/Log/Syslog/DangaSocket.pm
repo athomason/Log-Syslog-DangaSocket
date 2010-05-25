@@ -70,7 +70,7 @@ package Log::Syslog::DangaSocket;
 use strict;
 use warnings;
 
-our $VERSION = '1.05';
+our $VERSION = '1.06';
 
 our $CONNECT_TIMEOUT = 1;
 
