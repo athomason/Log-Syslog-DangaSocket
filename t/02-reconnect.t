@@ -5,6 +5,7 @@ use warnings;
 
 use Test::More tests => 46;
 
+use IO::Select;
 use IO::Socket::INET;
 use Log::Syslog::DangaSocket;
 use Time::HiRes 'time', 'sleep';
@@ -22,23 +23,45 @@ if (DEBUG) {
     };
 }
 
-$SIG{CHLD} = 'IGNORE';
-
-my $test_port = 10514;
-my $num_messages = 20;
+my $early_messages = 5;
+my $late_messages = 15;
+my $num_messages = $early_messages + $late_messages;
 my $delay = 0.1;
 
 my $parent = $$;
+
+sub start_listener {
+    my $port = shift;
+
+    my $listener = IO::Socket::INET->new(
+        Proto       => 'tcp',
+        LocalHost   => 'localhost',
+        LocalPort   => $port,
+        Listen      => 5,
+        Reuse       => 1,
+    );
+    die "failed to listen: $!" unless $listener;
+
+    return $listener;
+}
+
+$SIG{ALRM} = sub { die "No data read" };
+alarm 2*$num_messages*$delay;
+
+my $listener = start_listener(0);
+my $test_port = $listener->sockport;
+DEBUG && warn "listening on port $test_port\n";
 
 my $pid = fork;
 die "fork failed" unless defined $pid;
 
 if (!$pid) {
-    DEBUG && warn "kid is $$\n";
     # child acts as syslog client
-    sleep 1; # give parent a chance to start listener
+    DEBUG && warn "kid is $$\n";
 
-    DEBUG && warn "creating logger\n";
+    undef $listener;
+
+    DEBUG && warn "creating logger to port $test_port\n";
     my $logger = Log::Syslog::DangaSocket->new(
         'tcp',
         'localhost',
@@ -49,24 +72,28 @@ if (!$pid) {
         5,
     );
 
+    my $n = 0;
+
     # send some messages before event loop
-    $logger->send($_) for 0..4;
+    for (0..$early_messages-1) {
+        DEBUG && warn "syslogging $n\n";
+        $logger->send($n++);
+    }
 
     # send rest after
     my $sender;
     $sender = sub {
-        my $n = shift;
-        DEBUG && warn "syslogging '$n'\n";
-        $logger->send($n);
+        my $m = shift;
+        DEBUG && warn "syslogging $n\n";
+        $logger->send($n++);
         Danga::Socket->AddTimer($delay, sub {
-            if ($n < $num_messages) {
-                $sender->($n+1);
-            }
+            $sender->($m-1) if $m > 0;
         } );
     };
-    DEBUG && warn "starting to send\n";
-    $sender->(5);
+    DEBUG && warn "starting delayed send\n";
+    $sender->($late_messages);
 
+    DEBUG && warn "starting event loop\n";
     Danga::Socket->AddTimer(10, sub {
         DEBUG && warn "exiting\n";
         exit 0;
@@ -76,44 +103,27 @@ if (!$pid) {
 }
 DEBUG && warn "forked kid $pid\n";
 
-my $listener;
-sub start_listener {
-    $listener = IO::Socket::INET->new(
-        Proto       => 'tcp',
-        LocalHost   => 'localhost',
-        LocalPort   => $test_port,
-        Listen      => 5,
-        Reuse       => 1,
-    );
-}
+sub accept_syslogd {
+    my $listener = shift;
 
-sub syslogd {
-    $SIG{ALRM} = sub { die "No connection received" };
-    alarm 3;
+    die "no connection received" unless IO::Select->new($listener)->can_read(3);
 
     DEBUG && warn "calling accept\n";
     my $syslogd = $listener->accept;
     DEBUG && warn "accept returned\n";
 
-    alarm 0;
-
     pass('got connection');
 
     DEBUG && warn "selecting\n";
-    vec(my $rin = '', fileno($syslogd), 1) = 1;
-    my $found = select(my $rout = $rin, undef, undef, 5);
+    my $sel = IO::Select->new($syslogd);
+    my $found = $sel->can_read(5);
 
     ok($found, "didn't time out while waiting for data");
 
     return $syslogd;
 }
 
-$SIG{ALRM} = sub { die "No data read" };
-alarm 2*$num_messages*$delay;
-
-start_listener();
-
-my $syslogd = syslogd();
+my $syslogd = accept_syslogd($listener);
 DEBUG && warn "reading from $syslogd\n";
 for my $lineno (0 .. $num_messages/2-1) {
     chomp(my $line = <$syslogd>);
@@ -128,11 +138,11 @@ undef $listener;
 DEBUG && warn "server closing\n";
 $syslogd->close();
 
-sleep 8*$delay;
+sleep int($late_messages/2) * $delay;
 DEBUG && warn "server restarted\n";
 
-start_listener;
-$syslogd = syslogd();
+$listener = start_listener($test_port);
+$syslogd = accept_syslogd($listener);
 DEBUG && warn "reading from $syslogd\n";
 for my $lineno ($num_messages/2 .. $num_messages) {
     chomp(my $line = <$syslogd>);
@@ -142,3 +152,4 @@ for my $lineno ($num_messages/2 .. $num_messages) {
 DEBUG && warn "done\n";
 
 kill 9, $pid;
+waitpid $pid, 0;
