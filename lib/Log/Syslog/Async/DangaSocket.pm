@@ -1,12 +1,12 @@
-package Log::Syslog::DangaSocket::Socket;
+package Log::Syslog::Async::DangaSocket;
 
 use strict;
 use warnings;
 
 use Carp;
+use Danga::Socket;
 use IO::Socket::INET;
 use IO::Socket::UNIX;
-use POSIX 'strftime';
 use Socket qw(SOL_SOCKET SO_ERROR);
 
 use base 'Danga::Socket';
@@ -27,7 +27,7 @@ sub new {
     my $ref   = shift;
     my $class = ref $ref || $ref;
 
-    my Log::Syslog::DangaSocket::Socket $self = fields::new($class);
+    my Log::Syslog::Async::DangaSocket $self = fields::new($class);
 
     # kick off non-blocking connect
     my $sock;
@@ -69,7 +69,7 @@ sub new {
 }
 
 sub write_buffered {
-    my Log::Syslog::DangaSocket::Socket $self = shift;
+    my Log::Syslog::Async::DangaSocket $self = shift;
 
     my $message_ref = shift;
     push @{ $self->{queue} }, $message_ref;
@@ -81,7 +81,7 @@ sub write_buffered {
 }
 
 sub flush_queue {
-    my Log::Syslog::DangaSocket::Socket $self = shift;
+    my Log::Syslog::Async::DangaSocket $self = shift;
     my $queue = $self->{queue};
 
     my @to_send = @$queue; # copy so shift() below doesn't modify iterated list
@@ -99,7 +99,7 @@ sub flush_queue {
 }
 
 sub event_write {
-    my Log::Syslog::DangaSocket::Socket $self = shift;
+    my Log::Syslog::Async::DangaSocket $self = shift;
     DEBUG && warn "entering event_write\n";
     if ($self->{connecting}) {
         my $packed_error = getsockopt($self->sock, SOL_SOCKET, SO_ERROR);
@@ -124,13 +124,13 @@ sub event_write {
 # normally syslogd doesn't send anything back. if an error occurs (like remote
 # side closing the connection), we'll be notified of eof this way
 sub event_read {
-    my Log::Syslog::DangaSocket::Socket $self = shift;
+    my Log::Syslog::Async::DangaSocket $self = shift;
     my $read = sysread $self->{sock}, my $buf, 1;
     $self->close if defined $read && $read == 0; # eof
 }
 
 sub close {
-    my Log::Syslog::DangaSocket::Socket $self = shift;
+    my Log::Syslog::Async::DangaSocket $self = shift;
     return if $self->{closed};
     DEBUG && warn "closing\n";
     if ($self->{connecting}) {
@@ -147,6 +147,8 @@ sub close {
     }
     $self->SUPER::close(@_);
 }
+
+no warnings 'once';
 
 # close on any error
 *event_err = \&close;

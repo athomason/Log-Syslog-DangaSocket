@@ -1,11 +1,11 @@
-%define pkgname Log-Syslog-DangaSocket
+%define pkgname Log-Syslog-Async
 %define filelist %{pkgname}-%{version}-filelist
 %define NVR %{pkgname}-%{version}-%{release}
 %define maketest 1
-%define VERSION %(grep 'VERSION =' lib/Log/Syslog/DangaSocket.pm | perl -nle '/([0-9.]+)/ && print $1')
+%define VERSION %(grep 'VERSION =' lib/Log/Syslog/Async.pm | perl -nle '/([0-9.]+)/ && print $1')
 
-name:      perl-Log-Syslog-DangaSocket
-summary:   Log-Syslog-DangaSocket - Danga::Socket wrapper around a syslog sending socket
+name:      perl-Log-Syslog-Async
+summary:   Log-Syslog-Async - Async wrapper around a syslog sending socket
 version:   %{VERSION}
 release:   1
 vendor:    Adam Thomason <athomason@cpan.org>
@@ -16,8 +16,9 @@ url:       http://www.cpan.org
 buildroot: %{_tmppath}/%{name}-%{version}-%(id -u -n)
 buildarch: noarch
 prefix:    %(echo %{_prefix})
-source:    Log-Syslog-DangaSocket-%{version}.tar.gz
+source:    Log-Syslog-Async-%{version}.tar.gz
 
+requires:  perl(AnyEvent)
 requires:  perl(Danga::Socket)
 
 %description

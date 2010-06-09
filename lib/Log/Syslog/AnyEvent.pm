@@ -1,4 +1,4 @@
-package Log::Syslog::DangaSocket;
+package Log::Syslog::AnyEvent;
 
 use strict;
 use warnings;
@@ -9,7 +9,7 @@ our @ISA = qw(Log::Syslog::Async);
 
 sub new {
     my $class = shift;
-    return $class->SUPER::new('Danga::Socket', @_);
+    return $class->SUPER::new('AnyEvent', @_);
 }
 
 1;

@@ -1,7 +1,10 @@
 Changes
+lib/Log/Syslog/Async.pm
+lib/Log/Syslog/Async/AnyEvent.pm
+lib/Log/Syslog/Async/DangaSocket.pm
 lib/Log/Syslog/DangaSocket.pm
-lib/Log/Syslog/DangaSocket/Socket.pm
-Log-Syslog-DangaSocket.spec
+lib/Log/Syslog/AnyEvent.pm
+Log-Syslog-Async.spec
 Makefile.PL
 MANIFEST
 MANIFEST.SKIP
