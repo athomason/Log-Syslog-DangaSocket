@@ -10,7 +10,6 @@ use IO::Socket::INET;
 use IO::Socket::UNIX;
 use Socket qw(SOL_SOCKET SO_ERROR);
 
-sub pp { require Data::Dump; Data::Dump::pp(@_) . "\n" }
 use constant {
     SOCK            => 0,   # IO::Socket object
     CONNECTING      => 1,   # connect timer object before connected, undef afterwards
@@ -21,7 +20,6 @@ use constant {
 };
 
 our $CONNECT_TIMEOUT = 1;
-use constant DEBUG => 0;
 
 # $class->new($proto, $host, $port, $err_handler, $messages)
 # $err_handler callback will be called with an arrayref of any unsent data
@@ -49,19 +47,16 @@ sub new {
     }
 
     croak "couldn't create sock: $!" unless defined $self->[SOCK];
-    DEBUG && warn "made sock $self->[SOCK]\n";
 
     $self->[ERR_HANDLER] = $_[3];
 
     # start with initial message queue (probably from reconnect) if present
     $self->[QUEUE] = $_[4] || [];
-    DEBUG && warn "initial queue: " . pp($self->[QUEUE]);
 
     if ($_[0] eq 'tcp' || $_[0] eq 'unix') {
         # for stream cxns, handle async connection phase here, then delegate to AnyEvent::Handle
         $self->[WRITE_WATCHER] = AE::io($self->[SOCK], 1, sub { $self->event_write(@_) });
         $self->[CONNECTING] = AE::timer($CONNECT_TIMEOUT, 0, sub {
-            DEBUG && warn "$self connect timeout\n";
             $self->close;
         });
     }
@@ -76,10 +71,8 @@ sub new {
 
 sub event_write {
     my Log::Syslog::Async::AnyEvent $self = shift;
-    DEBUG && warn "entering event_write\n";
     if ($self->[CONNECTING]) {
         if (!defined $self->[SOCK]) {
-            DEBUG && warn "sock is undefined\n";
             warn "caller is " . pp([caller]) . "\n";
             $self->[WRITE_WATCHER] = undef;
             return;
@@ -90,25 +83,21 @@ sub event_write {
 
         if ($! == 0) {
             # connected
-            DEBUG && warn "connected\n";
 
             $self->[CONNECTING]    =
             $self->[WRITE_WATCHER] = undef;
 
             $self->[HANDLE] = AnyEvent::Handle->new(
                 fh       => $self->[SOCK],
-                on_error => sub { DEBUG && warn "on_error: $_[1]\n"; $self->close },
-                on_eof   => sub { DEBUG && warn "on_eof\n"; $self->close },
+                on_error => sub { $self->close },
+                on_eof   => sub { $self->close },
                 on_read  => sub { }, # need this to get eof notification
                 linger   => 0,
             );
 
-            DEBUG && warn "flushing\n";
-
             $self->flush_queue;
         }
         else {
-            DEBUG && warn "connect error: $!\n";
             $self->close;
         }
     }
@@ -125,18 +114,14 @@ sub write_buffered {
     if ($self->[CONNECTING]) {
         # flush will happen upon connection
         push @{ $self->[QUEUE] }, $message_ref;
-        DEBUG && warn "queued $$message_ref\n";
     }
     else {
         $self->[HANDLE]->push_write($$message_ref);
-        DEBUG && warn "push_write'd: $$message_ref\n";
     }
 }
 
 sub flush_queue {
     my Log::Syslog::Async::AnyEvent $self = shift;
-
-    DEBUG && warn "dumping queue: " . pp($self->[QUEUE]);
 
     $self->[HANDLE]->push_write($$_) for @{ $self->[QUEUE] };
     $self->[QUEUE] = [];
@@ -150,13 +135,10 @@ sub close {
 
     return unless $self->[SOCK];
 
-    DEBUG && warn "in close\n";
     if ($self->[CONNECTING]) {
         # if we got an error while still trying to connect, back off before trying again
         my $key = $n_timer++;
-        DEBUG && warn "closed before connected, retry #$key in ${CONNECT_TIMEOUT}s\n";
         $Timers{$key} = AE::timer($CONNECT_TIMEOUT, 0, sub {
-            DEBUG && warn "retrying connect #$key\n";
             $self->[ERR_HANDLER]->($self->[QUEUE]) if $self->[ERR_HANDLER];
             delete $Timers{$key};
         });
@@ -164,7 +146,6 @@ sub close {
     }
     elsif ($self->[ERR_HANDLER]) {
         # otherwise try to reconnect immediately
-        DEBUG && warn "closed after connected, calling ERR_HANDLER\n";
         my $queue = $self->[QUEUE];
         unshift @$queue, \"$self->[HANDLE]{wbuf}" if length $self->[HANDLE]{wbuf};
         $self->[ERR_HANDLER]->($queue);
